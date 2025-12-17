@@ -64,9 +64,17 @@ func resourcePrivateVirtualInterface() *schema.Resource {
 				Computed: true,
 			},
 			"bgp_asn": {
-				Type:     schema.TypeInt,
-				Required: true,
-				ForceNew: true,
+				Type:          schema.TypeInt,
+				Optional:      true,
+				ForceNew:      true,
+				ConflictsWith: []string{"bgp_asn_long"},
+			},
+			"bgp_asn_long": {
+				Type:          schema.TypeString,
+				Optional:      true,
+				ForceNew:      true,
+				ValidateFunc:  validLongASN(),
+				ConflictsWith: []string{"bgp_asn"},
 			},
 			"bgp_auth_key": {
 				Type:     schema.TypeString,
@@ -142,13 +150,21 @@ func resourcePrivateVirtualInterfaceCreate(ctx context.Context, d *schema.Resour
 		ConnectionId: aws.String(d.Get(names.AttrConnectionID).(string)),
 		NewPrivateVirtualInterface: &awstypes.NewPrivateVirtualInterface{
 			AddressFamily:        awstypes.AddressFamily(d.Get("address_family").(string)),
-			Asn:                  int32(d.Get("bgp_asn").(int)),
 			EnableSiteLink:       aws.Bool(d.Get("sitelink_enabled").(bool)),
 			Mtu:                  aws.Int32(int32(d.Get("mtu").(int))),
 			Tags:                 getTagsIn(ctx),
 			VirtualInterfaceName: aws.String(d.Get(names.AttrName).(string)),
 			Vlan:                 int32(d.Get("vlan").(int)),
 		},
+	}
+
+	if v, ok := d.GetOk("bgp_asn"); ok {
+		input.NewPrivateVirtualInterface.Asn = int32(v.(int))
+	}
+
+	if v, ok := d.GetOk("bgp_asn_long"); ok {
+		asn, _ := parseASN(v.(string))
+		input.NewPrivateVirtualInterface.AsnLong = aws.Int64(asn)
 	}
 
 	if v, ok := d.GetOk("amazon_address"); ok {
@@ -214,7 +230,12 @@ func resourcePrivateVirtualInterfaceRead(ctx context.Context, d *schema.Resource
 	}.String()
 	d.Set(names.AttrARN, arn)
 	d.Set("aws_device", vif.AwsDeviceV2)
-	d.Set("bgp_asn", vif.Asn)
+	if _, ok := d.GetOk("bgp_asn"); ok {
+		d.Set("bgp_asn", vif.Asn)
+	}
+	if _, ok := d.GetOk("bgp_asn_long"); ok {
+		d.Set("bgp_asn_long", strconv.FormatInt(aws.ToInt64(vif.AsnLong), 10))
+	}
 	d.Set("bgp_auth_key", vif.AuthKey)
 	d.Set(names.AttrConnectionID, vif.ConnectionId)
 	d.Set("customer_address", vif.CustomerAddress)
